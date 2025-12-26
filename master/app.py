@@ -1,3 +1,29 @@
+# --- Selenium Amazon Product Discovery ---
+def selenium_discover_amazon_products(keyword, limit=10):
+	from selenium import webdriver
+	from selenium.webdriver.common.by import By
+	from selenium.webdriver.chrome.service import Service
+	import time
+	driver_path = 'e:/web_crawler/chromedriver-win64/chromedriver.exe'
+	service = Service(driver_path)
+	options = webdriver.ChromeOptions()
+	options.add_argument('--headless')
+	options.add_argument('--disable-gpu')
+	options.add_argument('--window-size=1920,1080')
+	driver = webdriver.Chrome(service=service, options=options)
+	search_url = f'https://www.amazon.com/s?k={keyword}'
+	driver.get(search_url)
+	time.sleep(3)
+	product_urls = set()
+	links = driver.find_elements(By.CSS_SELECTOR, 'a.a-link-normal.s-no-outline')
+	for link in links:
+		href = link.get_attribute('href')
+		if href and '/dp/' in href:
+			product_urls.add(href)
+		if len(product_urls) >= limit:
+			break
+	driver.quit()
+	return list(product_urls)
 
 import uuid
 import time
@@ -91,6 +117,27 @@ def get_session_results(session_id):
 			parsed = {'error': data}
 		results[url] = parsed
 	return jsonify({'results': results}), 200
+
+# Endpoint to discover product URLs from a site based on keyword and limit
+@app.route('/discover-urls', methods=['POST'])
+def discover_urls():
+	data = request.get_json()
+	site_url = data.get('site_url', '').strip()
+	keyword = data.get('product_keyword', '').strip()
+	limit = int(data.get('url_limit', 10))
+	discovered = []
+	# For Amazon, use Selenium for robust product discovery
+	if 'amazon.' in site_url:
+		try:
+			discovered = selenium_discover_amazon_products(keyword, limit)
+			print(f"[DEBUG] Selenium discovered {len(discovered)} product URLs.")
+		except Exception as e:
+			print(f"[DEBUG] Exception during Selenium discovery: {e}")
+			return jsonify({'error': f'Failed to discover URLs: {e}'}), 500
+	else:
+		return jsonify({'error': 'Site not supported for auto-discovery.'}), 400
+	return jsonify({'urls': discovered}), 200
+
 
 # Endpoint to get current worker activity
 @app.route('/workers', methods=['GET'])

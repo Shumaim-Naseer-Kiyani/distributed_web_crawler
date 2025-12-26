@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Session Results | Distributed Crawler</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .url-col {
+            max-width: 320px;
+            word-break: break-all;
+            white-space: pre-line;
+            overflow-wrap: anywhere;
+            text-align: left;
+        }
+        .desc-col {
+            max-width: 320px;
+            word-break: break-all;
+            white-space: pre-line;
+            overflow-wrap: anywhere;
+            text-align: left;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 0.5em;
+        }
+        th {
+            background: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <span class="brand">Distributed Crawler</span>
+        <nav>
+            <a href="home.html">Home</a>
+            <a href="crawl.html">Crawl</a>
+            <a href="dashboard.html">Progress Dashboard</a>
+            <a href="history.html">Crawl History</a>
+        </nav>
+    </div>
+    <div class="container">
+        <div class="section-title">Session Results</div>
+        <div class="card table-responsive">
+            <div id="results"></div>
+        </div>
+    </div>
+    <footer>
+        &copy; 2025 Distributed Crawler &mdash; Parallel &amp; Distributed Computing Project
+    </footer>
+    <script>
+    // Extract session ID from URL
+    function getSessionId() {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('session');
+    }
+    function fetchResults() {
+        const sessionId = getSessionId();
+        if (!sessionId) {
+            document.getElementById('results').innerHTML = '<p>No session specified.</p>';
+            return;
+        }
+        fetch(`http://localhost:5000/results/${sessionId}`)
+        .then(res => res.json())
+        .then(data => {
+            const results = data.results || {};
+            let html = '';
+            if (Object.keys(results).length === 0) {
+                html += '<p>No results yet.</p>';
+            } else {
+                html += '<table><tr><th>URL</th><th>Name</th><th>Price</th><th>Rating</th><th>Availability</th><th>Image</th><th>Description</th><th>Error</th></tr>';
+                for (const [url, dataRaw] of Object.entries(results)) {
+                    let data = dataRaw;
+                    if (typeof data === 'string' && data.trim().startsWith('{') && data.trim().endsWith('}')) {
+                        try { data = JSON.parse(data); } catch (e) { data = { error: dataRaw }; }
+                    }
+                    let name = data.name || '';
+                    let price = data.price || '';
+                    let rating = data.rating || '';
+                    let availability = data.availability || '';
+                    let image = data.image_url ? `<img src="${data.image_url}" alt="img" style="max-width:60px;max-height:60px;">` : '';
+                    let description = data.description || '';
+                    let error = data.error || '';
+                    html += `<tr>
+                        <td class='url-col' title='Click to expand/collapse'>${url}</td>
+                        <td>${name}</td>
+                        <td>${price}</td>
+                        <td>${rating}</td>
+                        <td>${availability}</td>
+                        <td>${image}</td>
+                        <td class='desc-col' title='Click to expand/collapse'>${description}</td>
+                        <td>${error}</td>
+                    </tr>`;
+                }
+                html += '</table>';
+            }
+            document.getElementById('results').innerHTML = html;
+            // Add expand/collapse to description cells
+            document.querySelectorAll('.desc-col, .url-col').forEach(cell => {
+                cell.addEventListener('click', function() {
+                    this.classList.toggle('expanded');
+                });
+            });
+        })
+        .catch(err => {
+            document.getElementById('results').innerText = 'Error fetching results.';
+        });
+    }
+    fetchResults();
+    </script>
+</body>
+</html>

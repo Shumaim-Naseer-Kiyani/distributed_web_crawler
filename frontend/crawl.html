@@ -25,6 +25,19 @@
             <div id="status" style="margin-top:1em;"></div>
             <div id="already-crawled-msg" style="margin-top:0.5em;color:#b00;font-size:0.98em;"></div>
         </div>
+
+        <div class="section-title" style="margin-top:2em;">Crawl Sites</div>
+        <div class="card">
+            <label for="site-url">Site URL:</label>
+            <input type="text" id="site-url" placeholder="e.g. https://www.amazon.com" style="width:100%;margin-bottom:0.5em;">
+            <label for="product-keyword">Product/Keyword:</label>
+            <input type="text" id="product-keyword" placeholder="e.g. watches" style="width:100%;margin-bottom:0.5em;">
+            <label for="url-limit">Limit:</label>
+            <input type="number" id="url-limit" min="1" max="100" value="10" style="width:100px;margin-bottom:0.5em;">
+            <button onclick="discoverUrls()">Discover & Crawl Products</button>
+            <div id="discover-status" style="margin-top:1em;color:#0a7;font-size:0.98em;"></div>
+            <div id="discovered-urls" style="margin-top:0.5em;"></div>
+        </div>
         <div id="progress-bar-container" style="margin-bottom:1.5em;"></div>
         <div class="section-title" style="margin-top:2em;">Crawl Results</div>
         <div class="card table-responsive">
@@ -35,7 +48,66 @@
         &copy; 2025 Distributed Crawler &mdash; Parallel &amp; Distributed Computing Project
     </footer>
     <style>
+        /* Success tick animation */
+        .success-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 2em;
+        }
+        .success-tick {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: #e0fbe0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1em;
+            animation: pop-in 0.6s cubic-bezier(.4,2,.6,1);
+        }
+        @keyframes pop-in {
+            0% { transform: scale(0.2); opacity: 0; }
+            80% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .success-tick svg {
+            width: 60px;
+            height: 60px;
+            stroke: #22c55e;
+            stroke-width: 6;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+            stroke-dasharray: 48;
+            stroke-dashoffset: 48;
+            animation: draw-tick 0.7s 0.2s forwards cubic-bezier(.4,2,.6,1);
+        }
+        @keyframes draw-tick {
+            to { stroke-dashoffset: 0; }
+        }
+        .success-message {
+            font-size: 1.5em;
+            color: #22c55e;
+            margin-bottom: 0.5em;
+            text-align: center;
+        }
+        .success-link {
+            font-size: 1.1em;
+            color: #2563eb;
+            text-decoration: underline;
+            margin-top: 0.5em;
+            cursor: pointer;
+        }
     .progress-bar-bg {
+            /* Make URL column wrap and not overflow */
+            .url-col {
+                max-width: 320px;
+                word-break: break-all;
+                white-space: pre-line;
+                overflow-wrap: anywhere;
+                text-align: left;
+            }
         background: #e0e7ef;
         border-radius: 10px;
         height: 22px;
@@ -60,8 +132,82 @@
     }
     </style>
     <script>
+        function discoverUrls() {
+            const siteUrl = document.getElementById('site-url').value.trim();
+            const productKeyword = document.getElementById('product-keyword').value.trim();
+            const urlLimit = document.getElementById('url-limit').value;
+            if (!siteUrl || !productKeyword || !urlLimit) {
+                document.getElementById('discover-status').innerText = 'Please fill all fields.';
+                return;
+            }
+            document.getElementById('discover-status').innerText = 'Discovering product URLs...';
+            document.getElementById('discovered-urls').innerHTML = '';
+            fetch('http://localhost:5000/discover-urls', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ site_url: siteUrl, product_keyword: productKeyword, url_limit: urlLimit })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('discover-status').innerText = data.error;
+                    return;
+                }
+                const urls = data.urls || [];
+                if (urls.length === 0) {
+                    document.getElementById('discover-status').innerText = 'No product URLs found.';
+                    return;
+                }
+                document.getElementById('discover-status').innerText = `Found ${urls.length} product URLs.`;
+                let html = '<ul style="margin:0.5em 0 0 1.2em;">';
+                for (const url of urls) {
+                    html += `<li>${url}</li>`;
+                }
+                html += '</ul>';
+                html += `<button onclick="submitDiscoveredUrls()">Submit These URLs for Crawling</button>`;
+                document.getElementById('discovered-urls').innerHTML = html;
+                window.discoveredUrls = urls;
+            })
+            .catch(() => {
+                document.getElementById('discover-status').innerText = 'Error discovering URLs.';
+            });
+        }
+
+        function submitDiscoveredUrls() {
+            if (!window.discoveredUrls || window.discoveredUrls.length === 0) return;
+            document.getElementById('discover-status').innerText = 'Submitting discovered URLs for crawling...';
+            fetch('http://localhost:5000/submit-urls', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: window.discoveredUrls })
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('discover-status').innerText = `Submitted ${data.urls_added} URLs for crawling.`;
+                if (data.already_crawled && data.already_crawled.length > 0) {
+                    document.getElementById('discovered-urls').innerHTML +=
+                      '<br>Already crawled URLs:<br><ul style="margin:0.3em 0 0 1.2em;">' +
+                      data.already_crawled.map(url => `<li>${url}</li>`).join('') + '</ul>';
+                }
+                showProgressBar();
+                fetchResults();
+            })
+            .catch(() => {
+                document.getElementById('discover-status').innerText = 'Error submitting discovered URLs.';
+            });
+        }
+
     let progressBarInterval = null;
     let currentSessionId = null;
+
+    // On page load, check for ?session=... in URL and set currentSessionId
+    (function() {
+        const params = new URLSearchParams(window.location.search);
+        const session = params.get('session');
+        if (session) {
+            currentSessionId = session;
+        }
+    })();
 
     function showProgressBar() {
         updateProgressBar();
@@ -76,6 +222,19 @@
             progressBarInterval = null;
         }
     }
+    function showSuccessMessage() {
+        document.getElementById('results').innerHTML = `
+            <div class="success-container">
+                <div class="success-tick">
+                    <svg viewBox="0 0 24 24">
+                        <polyline points="20 6 11 17 4 10"></polyline>
+                    </svg>
+                </div>
+                <div class="success-message">Your crawl is successful.</div>
+                <div>Go to your <a class="success-link" href="history.html">history page</a> to view results.</div>
+            </div>
+        `;
+    }
     function updateProgressBar() {
         fetch('http://localhost:5000/progress')
         .then(res => res.json())
@@ -85,7 +244,10 @@
             let percent = total > 0 ? Math.round((done / total) * 100) : 100;
             let bar = `<div class='progress-bar-bg'><div class='progress-bar-fill' style='width:${percent}%;'>${percent}%</div></div>`;
             document.getElementById('progress-bar-container').innerHTML = bar;
-            if (percent >= 100) hideProgressBar();
+            if (percent >= 100) {
+                hideProgressBar();
+                showSuccessMessage();
+            }
         })
         .catch(() => {
             document.getElementById('progress-bar-container').innerHTML = '';
@@ -124,55 +286,7 @@
         });
     }
     function fetchResults() {
-        let url = 'http://localhost:5000/results';
-        if (currentSessionId) {
-            url = `http://localhost:5000/results/${currentSessionId}`;
-        }
-        fetch(url)
-        .then(res => res.json())
-        .then(data => {
-            const results = data.results || {};
-            let html = '';
-            if (Object.keys(results).length === 0) {
-                html += '<p>No results yet.</p>';
-            } else {
-                html += '<table><tr><th>URL</th><th>Name</th><th>Price</th><th>Rating</th><th>Availability</th><th>Image</th><th>Description</th><th>Error</th></tr>';
-                for (const [url, dataRaw] of Object.entries(results)) {
-                    let data = dataRaw;
-                    if (typeof data === 'string' && data.trim().startsWith('{') && data.trim().endsWith('}')) {
-                        try { data = JSON.parse(data); } catch (e) { data = { error: dataRaw }; }
-                    }
-                    let name = data.name || '';
-                    let price = data.price || '';
-                    let rating = data.rating || '';
-                    let availability = data.availability || '';
-                    let image = data.image_url ? `<img src="${data.image_url}" alt="img" style="max-width:60px;max-height:60px;">` : '';
-                    let description = data.description || '';
-                    let error = data.error || '';
-                    html += `<tr>
-                        <td class='url-col' title='Click to expand/collapse'>${url}</td>
-                        <td>${name}</td>
-                        <td>${price}</td>
-                        <td>${rating}</td>
-                        <td>${availability}</td>
-                        <td>${image}</td>
-                        <td class='desc-col' title='Click to expand/collapse'>${description}</td>
-                        <td>${error}</td>
-                    </tr>`;
-                }
-                html += '</table>';
-            }
-            document.getElementById('results').innerHTML = html;
-            // Add expand/collapse to description cells
-            document.querySelectorAll('.desc-col, .url-col').forEach(cell => {
-                cell.addEventListener('click', function() {
-                    this.classList.toggle('expanded');
-                });
-            });
-        })
-        .catch(err => {
-            document.getElementById('results').innerText = 'Error fetching results.';
-        });
+        // This function is now a no-op, as results are shown only in session.html
     }
     // Auto-refresh results every 5 seconds
     setInterval(fetchResults, 5000);
