@@ -67,14 +67,32 @@ def worker_loop():
 	r.hset(WORKERS_HASH, WORKER_ID, "idle")
 	while True:
 		# Use BLPOP for blocking pop from the queue (atomic, safe for parallel workers)
-		result = r.blpop(URL_QUEUE, timeout=10)  # (queue_name, url)
+		result = r.blpop(URL_QUEUE, timeout=10)  # (queue_name, task_json)
 		if result is None:
 			# Mark worker as idle
 			r.hset(WORKERS_HASH, WORKER_ID, "idle")
 			print("No tasks in queue. Worker sleeping...")
 			time.sleep(5)
 			continue
-		_, url = result
+		_, task_json = result
+		try:
+			print(f"[DEBUG] Pulled task_json: {task_json}")
+			task = json.loads(task_json)
+			session_id = task.get('session_id')
+			url = task.get('url')
+			print(f"[DEBUG] Extracted url: type={type(url)}, value={url}")
+			# Defensive: if url is a dict, extract 'url' key again
+			if isinstance(url, dict) and 'url' in url:
+				print(f"[DEBUG] url was a dict, extracting inner url: {url}")
+				url = url['url']
+			# If url is not a string, convert to string and warn
+			if not isinstance(url, str):
+				print(f"[DEBUG] url is not a string! type: {type(url)}, value: {url}")
+				url = str(url)
+		except Exception as e:
+			print(f"Malformed task in queue: {task_json}")
+			r.hset(WORKERS_HASH, WORKER_ID, "idle")
+			continue
 		# Register current task
 		r.hset(WORKERS_HASH, WORKER_ID, url)
 		# Check if URL already visited (atomic set add)
@@ -84,22 +102,30 @@ def worker_loop():
 			continue
 		# Mark as visited (atomic add)
 		r.sadd(VISITED_SET, url)
-		print(f"Crawling: {url}")
-		try:
-			resp = requests.get(url, timeout=10)
-			if resp.status_code == 200:
-				product_data = extract_product_data(resp.text)
-				# Store result as JSON in Redis hash (URL: JSON string)
-				r.hset(RESULTS_HASH, url, json.dumps(product_data))
-				print(f"Extracted data: {product_data}")
-			else:
-				error_data = {'error': f'HTTP {resp.status_code}'}
-				r.hset(RESULTS_HASH, url, json.dumps(error_data))
-				print(f"Failed to fetch {url}: HTTP {resp.status_code}")
-		except Exception as e:
-			error_data = {'error': str(e)}
-			r.hset(RESULTS_HASH, url, json.dumps(error_data))
-			print(f"Error crawling {url}: {e}")
+		# Ensure url is a string
+		if not isinstance(url, str):
+			print(f"[DEBUG] url is not a string! type: {type(url)}, value: {url}")
+			url = str(url)
+		if isinstance(url, str) and url.startswith('http'):
+			print(f"Crawling: {url}")
+			session_results_hash = f"crawler:results:{session_id}"
+			try:
+				resp = requests.get(url, timeout=10)
+				if resp.status_code == 200:
+					product_data = extract_product_data(resp.text)
+					# Store result as JSON in session-specific Redis hash (URL: JSON string)
+					r.hset(session_results_hash, url, json.dumps(product_data))
+					print(f"Extracted data: {product_data}")
+				else:
+					error_data = {'error': f'HTTP {resp.status_code}'}
+					r.hset(session_results_hash, url, json.dumps(error_data))
+					print(f"Failed to fetch {url}: HTTP {resp.status_code}")
+			except Exception as e:
+				error_data = {'error': str(e)}
+				r.hset(session_results_hash, url, json.dumps(error_data))
+				print(f"Error crawling {url}: {e} (URL: {url})")
+		else:
+			print(f"[ERROR] Skipping invalid url: type={type(url)}, value={url}")
 		# Mark worker as idle after finishing task
 		r.hset(WORKERS_HASH, WORKER_ID, "idle")
 

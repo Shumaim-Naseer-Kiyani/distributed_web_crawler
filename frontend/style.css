@@ -141,15 +141,19 @@ button:hover, .btn:hover {
 .table-responsive {
     overflow-x: auto;
 }
+
 table {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 1em;
+    table-layout: fixed;
 }
 th, td {
-    padding: 0.7em 0.5em;
+    padding: 0.5em 0.3em;
     border-bottom: 1px solid #e2e8f0;
     text-align: left;
+    font-size: 0.98em;
+    vertical-align: top;
 }
 th {
     background: #e0f2fe;
@@ -161,6 +165,38 @@ th {
 }
 tr:hover {
     background: #f0fdfa;
+}
+td.url-col {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+td.url-col.expanded {
+    max-width: 600px;
+    white-space: normal;
+    background: #e0f2fe;
+    z-index: 2;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(56,189,248,0.12);
+}
+td.desc-col {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+td.desc-col.expanded {
+    max-width: 600px;
+    white-space: normal;
+    background: #e0f2fe;
+    z-index: 2;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(56,189,248,0.12);
 }
 
 .badge {

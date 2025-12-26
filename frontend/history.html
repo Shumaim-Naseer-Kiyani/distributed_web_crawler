@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Crawl History | Distributed Crawler</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="navbar">
+        <span class="brand">Distributed Crawler</span>
+        <nav>
+            <a href="home.html">Home</a>
+            <a href="crawl.html">Crawl</a>
+            <a href="dashboard.html">Progress Dashboard</a>
+            <a href="history.html" class="active">Crawl History</a>
+        </nav>
+    </div>
+    <div class="container">
+        <div class="section-title">Crawl History</div>
+        <div class="card table-responsive">
+            <table id="history-table">
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Submitted</th>
+                        <th>Completed</th>
+                        <th>Failed</th>
+                        <th>Start Time</th>
+                        <th>View Results</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+    <footer>
+        &copy; 2025 Distributed Crawler &mdash; Parallel &amp; Distributed Computing Project
+    </footer>
+    <script>
+    function formatTime(ts) {
+        if (!ts) return '';
+        const d = new Date(ts * 1000);
+        return d.toLocaleString();
+    }
+    function fetchHistory() {
+        fetch('http://localhost:5000/sessions')
+        .then(res => res.json())
+        .then(data => {
+            const sessions = data.sessions || [];
+            let html = '';
+            for (const s of sessions) {
+                html += `<tr>
+                    <td title="${s.session_id}">${s.session_id.slice(0, 8)}...</td>
+                    <td>${s.submitted}</td>
+                    <td>${s.completed}</td>
+                    <td>${s.failed}</td>
+                    <td>${formatTime(s.start_time)}</td>
+                    <td><button class='btn' onclick="viewResults('${s.session_id}')">View</button></td>
+                </tr>`;
+            }
+            document.querySelector('#history-table tbody').innerHTML = html;
+        })
+        .catch(() => {
+            document.querySelector('#history-table tbody').innerHTML = '<tr><td colspan="6">Error loading history.</td></tr>';
+        });
+    }
+    function viewResults(sessionId) {
+        window.location.href = `crawl.html?session=${sessionId}`;
+    }
+    fetchHistory();
+    </script>
+</body>
+</html>
