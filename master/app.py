@@ -54,16 +54,37 @@ def get_results():
 		results[url] = parsed
 	return jsonify({'results': results}), 200
 
+# Endpoint to get current worker activity
+@app.route('/workers', methods=['GET'])
+def get_workers():
+	workers = r.hgetall('crawler:workers')
+	return jsonify({'workers': workers}), 200
+
+
 # (Optional) Endpoint to check crawl progress
 @app.route('/progress', methods=['GET'])
 def get_progress():
 	total_queued = r.llen(URL_QUEUE)
 	total_visited = r.scard(VISITED_SET)
 	total_results = r.hlen(RESULTS_HASH)
+	# Count failed results (those with an 'error' field)
+	failed = 0
+	all_results = r.hgetall(RESULTS_HASH)
+	import json
+	for v in all_results.values():
+		try:
+			data = v
+			if isinstance(data, str):
+				data = json.loads(data)
+			if 'error' in data:
+				failed += 1
+		except Exception:
+			continue
 	return jsonify({
 		'queued': total_queued,
 		'visited': total_visited,
-		'results': total_results
+		'results': total_results,
+		'failed': failed
 	}), 200
 
 if __name__ == '__main__':

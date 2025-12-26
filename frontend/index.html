@@ -26,13 +26,55 @@
 	<h2>Distributed Web Crawler</h2>
 	<label for="urls">Enter URLs (one per line):</label><br>
 	<textarea id="urls" placeholder="https://example.com\nhttps://another.com"></textarea><br>
+
 	<button onclick="submitUrls()">Start Crawling</button>
 	<button onclick="fetchResults()">Refresh Results</button>
+
+	<div id="dashboard">
+		<h3>Progress Dashboard</h3>
+		<div id="progress"></div>
+		<h3>Worker Activity</h3>
+		<div id="workers"></div>
+	</div>
 
 	<div id="status"></div>
 	<div id="results"></div>
 
 	<script>
+	// Periodically update dashboard
+	setInterval(() => {
+		fetchProgress();
+		fetchWorkers();
+	}, 3000);
+
+	function fetchProgress() {
+		fetch('http://localhost:5000/progress')
+		.then(res => res.json())
+		.then(data => {
+			let html = `<b>Queued:</b> ${data.queued} &nbsp; <b>Visited:</b> ${data.visited} &nbsp; <b>Completed:</b> ${data.results} &nbsp; <b>Failed:</b> ${data.failed}`;
+			document.getElementById('progress').innerHTML = html;
+		})
+		.catch(() => {
+			document.getElementById('progress').innerText = 'Error fetching progress.';
+		});
+	}
+
+	function fetchWorkers() {
+		fetch('http://localhost:5000/workers')
+		.then(res => res.json())
+		.then(data => {
+			const workers = data.workers || {};
+			let html = '<table><tr><th>Worker ID</th><th>Status / Current URL</th></tr>';
+			for (const [wid, status] of Object.entries(workers)) {
+				html += `<tr><td>${wid}</td><td>${status}</td></tr>`;
+			}
+			html += '</table>';
+			document.getElementById('workers').innerHTML = html;
+		})
+		.catch(() => {
+			document.getElementById('workers').innerText = 'Error fetching workers.';
+		});
+	}
 	// Send URLs to Flask server
 	function submitUrls() {
 		const textarea = document.getElementById('urls');

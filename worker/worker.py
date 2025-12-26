@@ -10,14 +10,21 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import json
+import socket
+import os
 
 # Connect to Memurai (Redis) running locally
 r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
 
 # Redis keys (must match master)
 URL_QUEUE = 'crawler:queue'         # Redis List: distributed task queue
 VISITED_SET = 'crawler:visited'     # Redis Set: track visited URLs
 RESULTS_HASH = 'crawler:results'    # Redis Hash: store crawl results
+WORKERS_HASH = 'crawler:workers'    # Redis Hash: track worker activity
+
+# Generate a unique worker ID (hostname + pid)
+WORKER_ID = f"{socket.gethostname()}_{os.getpid()}"
 
 
 # Extract product data from HTML
@@ -56,17 +63,24 @@ def extract_product_data(html):
 
 def worker_loop():
 	print("Worker started. Waiting for tasks...")
+	# Register as idle on startup
+	r.hset(WORKERS_HASH, WORKER_ID, "idle")
 	while True:
 		# Use BLPOP for blocking pop from the queue (atomic, safe for parallel workers)
 		result = r.blpop(URL_QUEUE, timeout=10)  # (queue_name, url)
 		if result is None:
+			# Mark worker as idle
+			r.hset(WORKERS_HASH, WORKER_ID, "idle")
 			print("No tasks in queue. Worker sleeping...")
 			time.sleep(5)
 			continue
 		_, url = result
+		# Register current task
+		r.hset(WORKERS_HASH, WORKER_ID, url)
 		# Check if URL already visited (atomic set add)
 		if r.sismember(VISITED_SET, url):
 			print(f"URL already visited: {url}")
+			r.hset(WORKERS_HASH, WORKER_ID, "idle")
 			continue
 		# Mark as visited (atomic add)
 		r.sadd(VISITED_SET, url)
@@ -86,6 +100,8 @@ def worker_loop():
 			error_data = {'error': str(e)}
 			r.hset(RESULTS_HASH, url, json.dumps(error_data))
 			print(f"Error crawling {url}: {e}")
+		# Mark worker as idle after finishing task
+		r.hset(WORKERS_HASH, WORKER_ID, "idle")
 
 if __name__ == '__main__':
 	worker_loop()

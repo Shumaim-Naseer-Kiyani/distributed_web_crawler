@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Progress Dashboard | Distributed Crawler</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="navbar">
+        <span class="brand">Distributed Crawler</span>
+        <nav>
+            <a href="home.html">Home</a>
+            <a href="crawl.html">Crawl</a>
+            <a href="dashboard.html" class="active">Progress Dashboard</a>
+        </nav>
+    </div>
+    <div class="container">
+        <div class="section-title">Progress Dashboard</div>
+        <div class="card" id="progress"></div>
+        <div class="section-title" style="margin-top:2em;">Worker Activity</div>
+        <div class="card table-responsive" id="workers"></div>
+    </div>
+    <footer>
+        &copy; 2025 Distributed Crawler &mdash; Parallel &amp; Distributed Computing Project
+    </footer>
+    <script>
+    function fetchProgress() {
+        fetch('http://localhost:5000/progress')
+        .then(res => res.json())
+        .then(data => {
+            let html = `<b>Queued:</b> ${data.queued} &nbsp; <b>Visited:</b> ${data.visited} &nbsp; <b>Completed:</b> ${data.results} &nbsp; <b>Failed:</b> ${data.failed}`;
+            document.getElementById('progress').innerHTML = html;
+        })
+        .catch(() => {
+            document.getElementById('progress').innerText = 'Error fetching progress.';
+        });
+    }
+    function fetchWorkers() {
+        fetch('http://localhost:5000/workers')
+        .then(res => res.json())
+        .then(data => {
+            const workers = data.workers || {};
+            let html = '<table><tr><th>Worker ID</th><th>Status / Current URL</th></tr>';
+            for (const [wid, status] of Object.entries(workers)) {
+                let badge = status === 'idle' ? '<span class="badge idle">Idle</span>' : `<span class="badge active">Active</span>`;
+                html += `<tr><td>${wid}</td><td>${badge} ${status}</td></tr>`;
+            }
+            html += '</table>';
+            document.getElementById('workers').innerHTML = html;
+        })
+        .catch(() => {
+            document.getElementById('workers').innerText = 'Error fetching workers.';
+        });
+    }
+    setInterval(() => {
+        fetchProgress();
+        fetchWorkers();
+    }, 3000);
+    fetchProgress();
+    fetchWorkers();
+    </script>
+</body>
+</html>

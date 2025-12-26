@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Crawl | Distributed Crawler</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="navbar">
+        <span class="brand">Distributed Crawler</span>
+        <nav>
+            <a href="home.html">Home</a>
+            <a href="crawl.html" class="active">Crawl</a>
+            <a href="dashboard.html">Progress Dashboard</a>
+        </nav>
+    </div>
+    <div class="container">
+        <div class="section-title">Crawl Product URLs</div>
+        <div class="card">
+            <label for="urls">Enter URLs (one per line):</label>
+            <textarea id="urls" placeholder="https://example.com\nhttps://another.com"></textarea>
+            <button onclick="submitUrls()">Start Crawling</button>
+            <button onclick="fetchResults()">Refresh Results</button>
+            <div id="status" style="margin-top:1em;"></div>
+        </div>
+        <div class="section-title" style="margin-top:2em;">Crawl Results</div>
+        <div class="card table-responsive">
+            <div id="results"></div>
+        </div>
+    </div>
+    <footer>
+        &copy; 2025 Distributed Crawler &mdash; Parallel &amp; Distributed Computing Project
+    </footer>
+    <script>
+    function submitUrls() {
+        const textarea = document.getElementById('urls');
+        const urls = textarea.value.split('\n').map(u => u.trim()).filter(u => u);
+        if (urls.length === 0) {
+            alert('Please enter at least one URL.');
+            return;
+        }
+        fetch('http://localhost:5000/submit-urls', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ urls })
+        })
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('status').innerText = `Submitted ${data.urls_added} URLs for crawling.`;
+            fetchResults();
+        })
+        .catch(err => {
+            document.getElementById('status').innerText = 'Error submitting URLs.';
+        });
+    }
+    function fetchResults() {
+        fetch('http://localhost:5000/results')
+        .then(res => res.json())
+        .then(data => {
+            const results = data.results || {};
+            let html = '';
+            if (Object.keys(results).length === 0) {
+                html += '<p>No results yet.</p>';
+            } else {
+                html += '<table><tr><th>URL</th><th>Name</th><th>Price</th><th>Rating</th><th>Availability</th><th>Image</th><th>Description</th><th>Error</th></tr>';
+                for (const [url, dataRaw] of Object.entries(results)) {
+                    let data = dataRaw;
+                    if (typeof data === 'string' && data.trim().startsWith('{') && data.trim().endsWith('}')) {
+                        try { data = JSON.parse(data); } catch (e) { data = { error: dataRaw }; }
+                    }
+                    let name = data.name || '';
+                    let price = data.price || '';
+                    let rating = data.rating || '';
+                    let availability = data.availability || '';
+                    let image = data.image_url ? `<img src="${data.image_url}" alt="img" style="max-width:60px;max-height:60px;">` : '';
+                    let description = data.description || '';
+                    let error = data.error || '';
+                    html += `<tr><td>${url}</td><td>${name}</td><td>${price}</td><td>${rating}</td><td>${availability}</td><td>${image}</td><td>${description}</td><td>${error}</td></tr>`;
+                }
+                html += '</table>';
+            }
+            document.getElementById('results').innerHTML = html;
+        })
+        .catch(err => {
+            document.getElementById('results').innerText = 'Error fetching results.';
+        });
+    }
+    // Auto-refresh results every 5 seconds
+    setInterval(fetchResults, 5000);
+    fetchResults();
+    </script>
+</body>
+</html>
