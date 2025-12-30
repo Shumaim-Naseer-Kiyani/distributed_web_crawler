@@ -1,3 +1,28 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import WebDriverException
+# Path to ChromeDriver (update if needed)
+CHROMEDRIVER_PATH = 'e:/web_crawler/chromedriver-win64/chromedriver.exe'
+
+# Fetch rendered HTML using Selenium (for Amazon URLs)
+def fetch_html_selenium(url, timeout=15):
+	options = Options()
+	options.add_argument('--headless')
+	options.add_argument('--disable-gpu')
+	options.add_argument('--no-sandbox')
+	options.add_argument('--window-size=1920,1080')
+	service = Service(CHROMEDRIVER_PATH)
+	try:
+		driver = webdriver.Chrome(service=service, options=options)
+		driver.set_page_load_timeout(timeout)
+		driver.get(url)
+		html = driver.page_source
+		driver.quit()
+		return html
+	except WebDriverException as e:
+		print(f"[ERROR] Selenium failed for {url}: {e}")
+		return None
 
 # Worker Process for Distributed Web Crawler
 # Connects to Memurai (Redis) for task coordination
@@ -26,14 +51,82 @@ WORKERS_HASH = 'crawler:workers'    # Redis Hash: track worker activity
 # Generate a unique worker ID (hostname + pid)
 WORKER_ID = f"{socket.gethostname()}_{os.getpid()}"
 
+# Robust Amazon price extraction
+def extract_amazon_price(soup):
+	# Match the specific price container
+	price_container = soup.find("span", class_="a-price aok-align-center reinventPricePriceToPayMargin priceToPay")
+	if price_container:
+		symbol = price_container.find("span", class_="a-price-symbol")
+		whole = price_container.find("span", class_="a-price-whole")
+		decimal = price_container.find("span", class_="a-price-decimal")
+		fraction = price_container.find("span", class_="a-price-fraction")
+		if symbol and whole and decimal and fraction:
+			whole_text = whole.get_text("", strip=True).replace(decimal.get_text("", strip=True), "")
+			price = f"{symbol.get_text(strip=True)}{whole_text}{decimal.get_text(strip=True)}{fraction.get_text(strip=True)}"
+			print("[PRICE HTML] Amazon price container (prettified):\n", price_container.prettify())
+			print("[PRICE HTML] Amazon price container (raw):\n", str(price_container))
+			return price
+		# Fallback: just get the whole price if available
+		if whole:
+			print("[PRICE HTML] Amazon price container (prettified):\n", price_container.prettify())
+			print("[PRICE HTML] Amazon price container (raw):\n", str(price_container))
+			return whole.get_text(strip=True)
+	# If not found, fallback to previous logic (other price blocks)
+	for pid in ["priceblock_ourprice", "priceblock_dealprice", "priceblock_saleprice"]:
+		p = soup.find(id=pid)
+		if p:
+			print(f"[PRICE HTML] Amazon price block id={pid} (prettified):\n", p.prettify())
+			print(f"[PRICE HTML] Amazon price block id={pid} (raw):\n", str(p))
+			return p.get_text(strip=True)
+	# Fallback to first a-price-whole
+	p = soup.find("span", class_="a-price-whole")
+	if p:
+		print("[PRICE HTML] Amazon a-price-whole (prettified):\n", p.prettify())
+		print("[PRICE HTML] Amazon a-price-whole (raw):\n", str(p))
+		return p.get_text(strip=True)
+	return None
+	# Fallback to alternate price blocks
+	for pid in ["priceblock_ourprice", "priceblock_dealprice", "priceblock_saleprice"]:
+		p = soup.find(id=pid)
+		if p:
+			print(f"[PRICE HTML] Amazon price block id={pid} (prettified):\n", p.prettify())
+			print(f"[PRICE HTML] Amazon price block id={pid} (raw):\n", str(p))
+			return p.get_text(strip=True)
+	# Fallback to first a-price-whole
+	p = soup.find("span", class_="a-price-whole")
+	if p:
+		print("[PRICE HTML] Amazon a-price-whole (prettified):\n", p.prettify())
+		print("[PRICE HTML] Amazon a-price-whole (raw):\n", str(p))
+		return p.get_text(strip=True)
+	return None
+
+
 
 # Extract product data from HTML
 def extract_product_data(html):
 	soup = BeautifulSoup(html, 'html.parser')
 	text = soup.get_text()
-	# Price
-	price_match = re.search(r'(\$|USD)?\s?([0-9]+[.,][0-9]{2})', text)
-	price = price_match.group(0).strip() if price_match else 'N/A'
+	# Amazon price extraction
+	price = None
+	# Try Amazon-specific extraction if URL is Amazon
+	# (Assume caller passes Amazon HTML for Amazon URLs)
+	price = extract_amazon_price(soup)
+	if not price:
+		# Fallback to regex
+		price_match = re.search(r'(\$|USD)?\s?([0-9]+[.,][0-9]{2})', text)
+		if price_match:
+			# Try to find the HTML containing the price string
+			price_str = price_match.group(0).strip()
+			price_tag = soup.find(string=re.compile(re.escape(price_str)))
+			if price_tag:
+				parent = price_tag.parent if price_tag.parent else price_tag
+				print("[PRICE HTML] Regex price match (prettified):\n", parent.prettify())
+				print("[PRICE HTML] Regex price match (raw):\n", str(parent))
+			else:
+				print(f"[PRICE HTML] Regex price string found in text: {price_str}")
+			price = price_str
+		else:
+			price = 'N/A'
 	# Name (try common tags)
 	name = soup.title.string.strip() if soup.title and soup.title.string else 'N/A'
 	# Rating (look for common patterns)
@@ -110,16 +203,28 @@ def worker_loop():
 			print(f"Crawling: {url}")
 			session_results_hash = f"crawler:results:{session_id}"
 			try:
-				resp = requests.get(url, timeout=10)
-				if resp.status_code == 200:
-					product_data = extract_product_data(resp.text)
-					# Store result as JSON in session-specific Redis hash (URL: JSON string)
-					r.hset(session_results_hash, url, json.dumps(product_data))
-					print(f"Extracted data: {product_data}")
+				html = None
+				# Use Selenium for Amazon URLs, requests for others
+				if 'amazon.com' in url:
+					html = fetch_html_selenium(url)
+					if html is None:
+						error_data = {'error': 'Selenium failed to fetch page'}
+						r.hset(session_results_hash, url, json.dumps(error_data))
+						print(f"Failed to fetch {url} with Selenium")
+						continue
 				else:
-					error_data = {'error': f'HTTP {resp.status_code}'}
-					r.hset(session_results_hash, url, json.dumps(error_data))
-					print(f"Failed to fetch {url}: HTTP {resp.status_code}")
+					resp = requests.get(url, timeout=10)
+					if resp.status_code == 200:
+						html = resp.text
+					else:
+						error_data = {'error': f'HTTP {resp.status_code}'}
+						r.hset(session_results_hash, url, json.dumps(error_data))
+						print(f"Failed to fetch {url}: HTTP {resp.status_code}")
+						continue
+				product_data = extract_product_data(html)
+				# Store result as JSON in session-specific Redis hash (URL: JSON string)
+				r.hset(session_results_hash, url, json.dumps(product_data))
+				print(f"Extracted data: {product_data}")
 			except Exception as e:
 				error_data = {'error': str(e)}
 				r.hset(session_results_hash, url, json.dumps(error_data))
