@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <title>Crawl | Distributed Crawler</title>
     <link rel="stylesheet" href="style.css">
+        <style>
+            .discovered-url {
+                max-width: 98%;
+                word-break: break-all;
+                white-space: pre-line;
+                overflow-wrap: anywhere;
+                text-align: left;
+                display: block;
+                padding: 2px 0;
+            }
+        </style>
 </head>
 <body>
     <div class="navbar">
@@ -159,9 +170,9 @@
                     return;
                 }
                 document.getElementById('discover-status').innerText = `Found ${urls.length} product URLs.`;
-                let html = '<ul style="margin:0.5em 0 0 1.2em;">';
+                let html = '<ul style="margin:0.5em 0 0 1.2em; padding:0;">';
                 for (const url of urls) {
-                    html += `<li>${url}</li>`;
+                    html += `<li class="discovered-url">${url}</li>`;
                 }
                 html += '</ul>';
                 html += `<button onclick="submitDiscoveredUrls()">Submit These URLs for Crawling</button>`;
