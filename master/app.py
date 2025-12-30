@@ -1,4 +1,9 @@
 # --- Selenium Amazon Product Discovery ---
+import utils.net
+import utils.clients
+import utils.http_session
+import utils.transport
+import utils.session
 def selenium_discover_amazon_products(keyword, limit=10):
 	from selenium import webdriver
 	from selenium.webdriver.common.by import By
